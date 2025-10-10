@@ -141,7 +141,6 @@ Provide a final determination: Is this a genuine fall event?
 
         return response
         
-
     def analyze_frame(
         self,
         image: Union[str, Path],
@@ -200,13 +199,11 @@ Provide a final determination: Is this a genuine fall event?
         result = json.loads(response.response)
         return result
         
-
-
     def analyze_frame_sequence(
         self,
         frames: List[str],
         window_size: int = 3,
-        custom_prompt: Optional[str] = None
+        step: int = 1,
     ) -> Dict[str, Any]:
         """
         Analyze a sequence of frames using sliding window approach.
@@ -214,15 +211,71 @@ Provide a final determination: Is this a genuine fall event?
         Args:
             images: List of image paths
             window_size: Number of frames to analyze together
+            step: how many frames to move the window
             custom_prompt: Optional prompt to override default
             
         Returns:
             Dictionary with keys: is_fall, confidence, frames, description
         """
-        # TODO: Implement batch frame analysis (Phase 2)
-        # 1. Create sliding windows
-        # 2. Process each window
-        # 3. Aggregate results
+
+        history = []
+        suspected_fall_frames = []
+        start = 0
+        counter = 0
+        while start <= len(frames) - window_size:
+
+        # Create batch
+            batch = list(map(self._encode_image, frames[start: start+window_size]))
+
+            print(f"processing batch {counter}")
+
+            for frame in frames[start: start+window_size]:
+                print(f"processing {frame}")
+                
+            counter += 1 
+
+            prompt = f"""
+You are given a set of {window_size} sequential frames. Analyze these frames to see if they are, sequentially, indicative of a fall.
+
+Determine if these frame show:
+- A fall in progress
+- An imminent fall (loss of balance, slipping)
+- Post-fall state (person on ground)
+- Normal activity (no fall)
+
+Always respond in JSON
+"""
+        
+            response = ollama.generate(
+                model=self.model_name,
+                prompt=prompt,
+                images=batch,
+                format={
+                    "type": "object",
+                    "properties": {
+                        "classification": {
+                            "type": "string",
+                            "enum": ["FALL", "NO_FALL", "POSSIBLE_FALL"]
+                        },
+                        "confidence": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0
+                        },
+                        "reasoning": {
+                            "type": "string"
+                        }
+                    },
+                    "required": ["classification", "confidence", "reasoning"]
+                }
+            )
+
+            response = json.loads(response.response)
+        
+            start += step
+
+            print(response)
+
         pass
     
     def _encode_image(self, image: Union[str, Path]) -> str:
@@ -248,21 +301,6 @@ Provide a final determination: Is this a genuine fall event?
             encoded = base64.b64encode(image_file.read()).decode('utf-8')
         
         return encoded
-    
-    def _build_prompt(self, custom_prompt: Optional[str] = None) -> str:
-        """
-        Build the prompt for fall detection analysis.
-        
-        Args:
-            custom_prompt: Optional custom prompt to use instead of default
-            
-        Returns:
-            Complete prompt string
-        """
-        # TODO: Implement prompt building
-        # Consider system_prompt + task-specific prompt
-        # Ensure it requests JSON format response
-        pass
     
     def _parse_response(self, raw_response: str) -> Dict[str, Any]:
         """
