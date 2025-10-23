@@ -32,6 +32,7 @@ class FallDetection:
         navbar = tk.Frame(self.root, bg="#000000", height=120)
         navbar.pack(fill="x")
 
+        # system title
         title_frame = tk.Frame(navbar, bg="#000000")
         title_frame.pack(side="left", padx=20)
 
@@ -44,11 +45,13 @@ class FallDetection:
         right_frame = tk.Frame(navbar, bg="#000000")
         right_frame.pack(side="right", padx=(20, 0))
 
+        # logo
         logo_img = Image.open("./img/segfault_logo.png").resize((130, 75), Image.Resampling.LANCZOS)
         self.logo_tk = ImageTk.PhotoImage(logo_img)
         logo_label = tk.Label(right_frame, image=self.logo_tk, bg="#000000")
         logo_label.pack(side="right", padx=(10, 0))
 
+        # refresh button
         refresh_img = Image.open("./img/refresh.png").resize((20, 20), Image.Resampling.LANCZOS)
         self.refresh_tk = ImageTk.PhotoImage(refresh_img)
 
@@ -60,9 +63,11 @@ class FallDetection:
         self.refresh_btn.pack(side="right", padx=(0, 10))
 
     def setup_preview_area(self):
+        # label to display alert
         self.detected_label = tk.Label(self.root, text="", font=("fixedsys", 22), bg="#1f1f1f", fg="#fe3330")
         self.detected_label.pack(side="top", pady=(20, 0))
 
+        # uploaded video preview  
         self.preview_frame = tk.Frame(self.root, bg="#1f1f1f")
         self.preview_frame.pack(pady=10)
 
@@ -82,15 +87,18 @@ class FallDetection:
         self.welcome_frame = tk.Frame(self.root, bg="#1f1f1f")
         self.welcome_frame.pack(pady=(5, 15))
 
+        # heading
         self.welcome_label = tk.Label(self.welcome_frame, text="Upload a Video", font=("Arial bold", 26), bg="#1f1f1f", fg="#cccaca")
         self.welcome_label.pack()
 
+        # sub heading / description
         self.description_label = tk.Label(self.welcome_frame,
                                           text="\nPlease select your desired video to analyse for the system\nto detect and identify a fall that occurs.",
                                           font=("Helvetica", 10),
                                           bg="#1f1f1f", fg="#e8e8e8")
         self.description_label.pack()
 
+        # upload button
         self.upload_btn = tk.Button(
             self.root, text="Upload", font=("Courier New Bold", 14),
             bg="#fe3330", fg="#ffffff",
@@ -112,6 +120,7 @@ class FallDetection:
     def setup_analyse_button(self):
         self.btn_frame = tk.Frame(self.root, bg="#1f1f1f")
 
+        # analyse button
         self.analyse_btn = tk.Button(
             self.btn_frame, text="Analyse", font=("Courier New Bold", 12),
             bg="#fe3330", fg="white",
@@ -121,6 +130,7 @@ class FallDetection:
         )
         self.analyse_btn.pack(side="left", padx=15)
 
+        # change video button
         self.change_video_btn = tk.Button(
             self.btn_frame, text="Change Video", font=("Courier New", 12),
             bg="#333333", fg="#b8b8b8",
@@ -136,7 +146,7 @@ class FallDetection:
         subsections_container = tk.Frame(self.result_frame, bg="#1f1f1f")
         subsections_container.pack(fill="both", expand=True, padx=5, pady=(5, 0))
 
-        # CLASSIFICATION
+        # classification section (output)
         class_frame = tk.Frame(subsections_container, bg="#141414", relief="solid", bd=1, width=150)
         class_frame.pack(side="left", fill="both", padx=(0, 5))
         class_frame.pack_propagate(False)
@@ -158,7 +168,7 @@ class FallDetection:
         )
         self.class_value.pack(fill="both", expand=True)
 
-        # DESCRIPTION
+        # description section (output)
         desc_frame = tk.Frame(subsections_container, bg="#141414", relief="solid", bd=1)
         desc_frame.pack(side="left", fill="both", expand=True, padx=(0, 5))
 
@@ -180,7 +190,7 @@ class FallDetection:
         )
         self.desc_value.pack(fill="both", expand=True)
 
-        # FALL TIMESTAMPS
+        # fall timestamps section (output)
         frames_frame = tk.Frame(subsections_container, bg="#141414", relief="solid", bd=1, width=150)
         frames_frame.pack(side="left", fill="both")
         frames_frame.pack_propagate(False)
@@ -249,15 +259,15 @@ class FallDetection:
 
     # ------------------------ UTILITY METHODS ------------------------ #
     def timestamp_to_frame(self, timestamp):
-        """Convert timestamp in seconds to frame number"""
+        # convert timestamp in seconds to frame number
         return int(timestamp * self.video_fps)
 
     def frame_to_timestamp(self, frame):
-        """Convert frame number to timestamp in seconds"""
+        # convert frame number to timestamp in seconds
         return frame / self.video_fps
 
     def format_timestamp(self, seconds):
-        """Format timestamp as MM:SS.ms"""
+        # format timestamp as MM:SS.ms
         mins = int(seconds // 60)
         secs = seconds % 60
         return f"{mins:02d}:{secs:05.2f}"
@@ -275,7 +285,6 @@ class FallDetection:
         print(f"Selected file: {file_path}")
         self.current_file_path = file_path
         
-        # Get video FPS
         cap = cv2.VideoCapture(file_path)
         self.video_fps = cap.get(cv2.CAP_PROP_FPS)
         cap.release()
@@ -285,6 +294,7 @@ class FallDetection:
         self.show_thumbnail(file_path)
 
     # ------------------------ ACTION METHODS ------------------------ #
+    # method to show new screen for when video is uploaded
     def show_analyse_btn(self):
         if self.welcome_frame.winfo_ismapped():
             self.welcome_frame.pack_forget()
@@ -321,7 +331,7 @@ class FallDetection:
         video_path = self.current_file_path
         print(f"Analyse called for: {video_path}")
 
-        # TEST DATA
+        # TEST DATA ----------------------------
         test_result = {
             "class": "FALL",
             "desc": "Elderly person slipped and fell backwards while walking.",
@@ -332,13 +342,25 @@ class FallDetection:
                 "recall": 89.5,
             }
         }
+        
+        test_result_no_fall = {
+            "class": "NO FALL",
+            "desc": "No fall was detected in this video.",
+            "fall_timestamps": [],
+            "metrics": {
+                "accuracy": 00.0,
+                "precision": 00.0,
+                "recall": 00.0,
+            }
+        }
+        # ---------------------------------------
 
         self.display_analysis_result(test_result)
         self.last_analysis_path = video_path
         return video_path
 
     def display_analysis_result(self, result_dict):
-
+        # takes from result dict for displaying data output
         cls = result_dict.get("class", "UNKNOWN")
         desc = result_dict.get("desc", "")
         timestamps = result_dict.get("fall_timestamps", [])
@@ -360,6 +382,7 @@ class FallDetection:
         self.frames_value.config(state="normal")
         self.frames_value.delete("1.0", "end")
 
+        # timestamps displayed and interactables
         if timestamps:
             for i, timestamp in enumerate(timestamps):
                 start = self.frames_value.index("insert")
@@ -384,10 +407,7 @@ class FallDetection:
         self.frames_value.config(state="disabled")
         self.frames_value.bind("<FocusIn>", lambda e: self.root.focus())
 
-        # update metrics bar
         self.update_metrics(metrics)
-
-        print(f"\n[Analysis {self.fall_counter}] -> Class: {cls}, Timestamps: {timestamps}")
 
     def update_metrics(self, metrics):
         accuracy = metrics.get("accuracy", None)
@@ -445,6 +465,7 @@ class FallDetection:
 
         self.play_frame_sequence(start_frame, end_frame, start_frame)
 
+    # method for displaying individual frames around when fall occurred, only called when user clicks on timestamp
     def play_frame_sequence(self, current_frame, end_frame, start_frame):
         if current_frame > end_frame:
             return
@@ -469,7 +490,7 @@ class FallDetection:
             self.thumbnail_label.image = imgtk
             self.thumbnail_label.pack(padx=10, pady=10)
 
-            self.playback_job = self.root.after(20, self.play_frame_sequence, current_frame + 1, end_frame, start_frame)
+            self.playback_job = self.root.after(20, self.play_frame_sequence, current_frame+1, end_frame, start_frame)
         else:
             print(f"Could not read frame {current_frame}, stopping playback")
 
@@ -478,7 +499,6 @@ class FallDetection:
         self.detected_label.config(fg=color)
         self.flash_job = self.root.after(250, self.flash_detected_label, not state)
 
-        # Stop flashing after 3 seconds
         if not hasattr(self, "_flash_stop_scheduled") or not self._flash_stop_scheduled:
             self._flash_stop_scheduled = True
             self.root.after(3000, self.stop_flash)
