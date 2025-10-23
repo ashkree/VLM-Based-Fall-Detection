@@ -2,13 +2,11 @@ import tkinter as tk
 from tkinter import filedialog
 from PIL import Image, ImageTk
 import cv2
-from tkinterdnd2 import DND_FILES, TkinterDnD
 import os
-
 
 class FallDetection:
     def __init__(self):
-        self.root = TkinterDnD.Tk()
+        self.root = tk.Tk()
         self.root.geometry("900x880")
         self.root.title("Fall Detection")
         self.root.config(bg="#1f1f1f")
@@ -17,7 +15,8 @@ class FallDetection:
         self.flash_job = None
         self.fall_counter = 0
         self.playback_job = None
-
+        self.video_fps = 30
+        
         self.setup_navbar()
         self.setup_preview_area()
         self.setup_thumbnail_area()
@@ -36,12 +35,10 @@ class FallDetection:
         title_frame = tk.Frame(navbar, bg="#000000")
         title_frame.pack(side="left", padx=20)
 
-        fall_label = tk.Label(title_frame, text="fall", font=("Arial Bold", 25),
-                              bg="#000000", fg="#fe3330")
+        fall_label = tk.Label(title_frame, text="fall", font=("Arial Bold", 25), bg="#000000", fg="#fe3330")
         fall_label.pack(side="left")
 
-        detection_label = tk.Label(title_frame, text="Detection", font=("Arial Bold", 24),
-                                   bg="#000000", fg="#ffffff")
+        detection_label = tk.Label(title_frame, text="Detection", font=("Arial Bold", 24), bg="#000000", fg="#ffffff")
         detection_label.pack(side="left")
 
         right_frame = tk.Frame(navbar, bg="#000000")
@@ -63,8 +60,7 @@ class FallDetection:
         self.refresh_btn.pack(side="right", padx=(0, 10))
 
     def setup_preview_area(self):
-        self.detected_label = tk.Label(self.root, text="", font=("fixedsys", 22),
-                                       bg="#1f1f1f", fg="#fe3330")
+        self.detected_label = tk.Label(self.root, text="", font=("fixedsys", 22), bg="#1f1f1f", fg="#fe3330")
         self.detected_label.pack(side="top", pady=(20, 0))
 
         self.preview_frame = tk.Frame(self.root, bg="#1f1f1f")
@@ -74,25 +70,19 @@ class FallDetection:
                                       font=("Courier New", 12), relief="solid",
                                       width=65, height=23, bg="#141414", fg="#cccaca")
         self.preview_label.pack(padx=10, pady=10)
-        self.preview_label.drop_target_register(DND_FILES)
-        self.preview_label.dnd_bind('<<Drop>>', self.handle_drop)
         self.preview_label.bind("<Button-1>", lambda e: self.open_file_locator())
         self.preview_label.bind("<Enter>", lambda e: self.preview_label.config(bg="#1a1a1a", cursor="hand2"))
         self.preview_label.bind("<Leave>", lambda e: self.preview_label.config(bg="#141414", cursor=""))
 
     def setup_thumbnail_area(self):
         self.thumbnail_frame = tk.Frame(self.root, bg="#1f1f1f")
-
-        self.thumbnail_label = tk.Label(self.thumbnail_frame, text="",
-                                        bg="#141414", relief="solid", bd=1)
+        self.thumbnail_label = tk.Label(self.thumbnail_frame, text="", bg="#141414", relief="solid", bd=1)
 
     def setup_welcome_section(self):
         self.welcome_frame = tk.Frame(self.root, bg="#1f1f1f")
         self.welcome_frame.pack(pady=(5, 15))
 
-        self.welcome_label = tk.Label(self.welcome_frame, text="Upload or Drag a Video",
-                                      font=("Arial bold", 26),
-                                      bg="#1f1f1f", fg="#cccaca")
+        self.welcome_label = tk.Label(self.welcome_frame, text="Upload a Video", font=("Arial bold", 26), bg="#1f1f1f", fg="#cccaca")
         self.welcome_label.pack()
 
         self.description_label = tk.Label(self.welcome_frame,
@@ -113,14 +103,10 @@ class FallDetection:
     def setup_file_label(self):
         self.file_label_frame = tk.Frame(self.root, bg="#1f1f1f")
 
-        self.selected_label = tk.Label(self.file_label_frame, text="Selected:",
-                                       font=("Courier New", 10),
-                                       bg="#1f1f1f", fg="#e8e8e8")
+        self.selected_label = tk.Label(self.file_label_frame, text="Selected:", font=("Courier New", 10), bg="#1f1f1f", fg="#e8e8e8")
         self.selected_label.pack(side="left")
 
-        self.filename_label = tk.Label(self.file_label_frame, text="",
-                                       font=("Courier New Bold", 10),
-                                       bg="#1f1f1f", fg="#99e695")
+        self.filename_label = tk.Label(self.file_label_frame, text="", font=("Courier New Bold", 10), bg="#1f1f1f", fg="#99e695")
         self.filename_label.pack(side="left")
 
     def setup_analyse_button(self):
@@ -194,11 +180,11 @@ class FallDetection:
         )
         self.desc_value.pack(fill="both", expand=True)
 
-        # FALL FRAMES
+        # FALL TIMESTAMPS
         frames_frame = tk.Frame(subsections_container, bg="#141414", relief="solid", bd=1, width=150)
         frames_frame.pack(side="left", fill="both")
         frames_frame.pack_propagate(False)
-        tk.Label(frames_frame, text="FALL FRAMES", font=("Arial Bold", 10),
+        tk.Label(frames_frame, text="FALL TIMESTAMPS", font=("Arial Bold", 10),
                  bg="#252525", fg="#ffffff", anchor="center", padx=10, pady=5).pack(fill="x")
 
         self.frames_container = tk.Frame(frames_frame, bg="#141414")
@@ -215,19 +201,16 @@ class FallDetection:
         self.frames_value.tag_configure("center", justify="center")
         self.frames_value.config(state="disabled")
 
-        # Metrics bar directly below the result sections
         self.setup_metrics_bar()
 
     def setup_metrics_bar(self):
-        """Create a subtle metrics bar showing model performance"""
         self.metrics_frame = tk.Frame(self.result_frame, bg="#1f1f1f", height=35)
         self.metrics_frame.pack(side="bottom", fill="x", padx=5, pady=(5, 5))
 
-        # Container for centered metrics
         metrics_container = tk.Frame(self.metrics_frame, bg="#1f1f1f")
         metrics_container.pack(expand=True)
 
-        # Accuracy
+        # accuracy
         self.accuracy_label = tk.Label(
             metrics_container,
             text="Accuracy: --",
@@ -237,11 +220,10 @@ class FallDetection:
         )
         self.accuracy_label.pack(side="left", padx=10)
 
-        # Separator
         tk.Label(metrics_container, text="|", font=("Courier New", 9),
                  bg="#1f1f1f", fg="#444444").pack(side="left", padx=5)
 
-        # Precision
+        # precision
         self.precision_label = tk.Label(
             metrics_container,
             text="Precision: --",
@@ -251,11 +233,10 @@ class FallDetection:
         )
         self.precision_label.pack(side="left", padx=10)
 
-        # Separator
         tk.Label(metrics_container, text="|", font=("Courier New", 9),
                  bg="#1f1f1f", fg="#444444").pack(side="left", padx=5)
 
-        # Recall
+        # recall
         self.recall_label = tk.Label(
             metrics_container,
             text="Recall: --",
@@ -265,19 +246,21 @@ class FallDetection:
         )
         self.recall_label.pack(side="left", padx=10)
 
-        # Separator
-        tk.Label(metrics_container, text="|", font=("Courier New", 9),
-                 bg="#1f1f1f", fg="#444444").pack(side="left", padx=5)
 
-        # F1 Score
-        self.f1_label = tk.Label(
-            metrics_container,
-            text="F1-Score: --",
-            font=("Courier New", 9),
-            bg="#1f1f1f",
-            fg="#888888"
-        )
-        self.f1_label.pack(side="left", padx=10)
+    # ------------------------ UTILITY METHODS ------------------------ #
+    def timestamp_to_frame(self, timestamp):
+        """Convert timestamp in seconds to frame number"""
+        return int(timestamp * self.video_fps)
+
+    def frame_to_timestamp(self, frame):
+        """Convert frame number to timestamp in seconds"""
+        return frame / self.video_fps
+
+    def format_timestamp(self, seconds):
+        """Format timestamp as MM:SS.ms"""
+        mins = int(seconds // 60)
+        secs = seconds % 60
+        return f"{mins:02d}:{secs:05.2f}"
 
     # ------------------------ FILE HANDLING ------------------------ #
     def open_file_locator(self):
@@ -288,13 +271,16 @@ class FallDetection:
         if file_path:
             self.handle_file(file_path)
 
-    def handle_drop(self, event):
-        file_path = event.data.strip('{}')
-        self.handle_file(file_path)
-
     def handle_file(self, file_path):
         print(f"Selected file: {file_path}")
         self.current_file_path = file_path
+        
+        # Get video FPS
+        cap = cv2.VideoCapture(file_path)
+        self.video_fps = cap.get(cv2.CAP_PROP_FPS)
+        cap.release()
+        print(f"Video FPS: {self.video_fps}")
+        
         self.show_analyse_btn()
         self.show_thumbnail(file_path)
 
@@ -323,7 +309,6 @@ class FallDetection:
 
     def analyse_video(self):
         if not self.current_file_path:
-            # Clear all subsections
             self.class_value.config(text="No video selected")
             self.desc_value.config(text="Please upload or choose a video first.")
             self.frames_value.config(state="normal")
@@ -340,18 +325,15 @@ class FallDetection:
         test_result = {
             "class": "FALL",
             "desc": "Elderly person slipped and fell backwards while walking.",
-            "fall frames": [60, 170, 380],
+            "fall_timestamps": [1.0, 3.67, 8.69],
             "metrics": {
                 "accuracy": 94.2,
                 "precision": 91.8,
                 "recall": 89.5,
-                "f1_score": 90.6
             }
         }
 
-        # display the result in the GUI
         self.display_analysis_result(test_result)
-
         self.last_analysis_path = video_path
         return video_path
 
@@ -359,7 +341,7 @@ class FallDetection:
 
         cls = result_dict.get("class", "UNKNOWN")
         desc = result_dict.get("desc", "")
-        frames = result_dict.get("fall frames", [])
+        timestamps = result_dict.get("fall_timestamps", [])
         metrics = result_dict.get("metrics", {})
 
         if cls == "FALL":
@@ -378,13 +360,14 @@ class FallDetection:
         self.frames_value.config(state="normal")
         self.frames_value.delete("1.0", "end")
 
-        if frames:
-            for i, frame_num in enumerate(frames):
+        if timestamps:
+            for i, timestamp in enumerate(timestamps):
                 start = self.frames_value.index("insert")
-                self.frames_value.insert("insert", str(frame_num), "center")
+                formatted_time = self.format_timestamp(timestamp)
+                self.frames_value.insert("insert", formatted_time, "center")
                 end = self.frames_value.index("insert")
 
-                tag_name = f"frame_{frame_num}_{i}"
+                tag_name = f"timestamp_{timestamp}_{i}"
                 self.frames_value.tag_add(tag_name, start, end)
                 self.frames_value.tag_config(
                     tag_name,
@@ -393,9 +376,9 @@ class FallDetection:
                 )
                 self.frames_value.tag_bind(tag_name, "<Enter>", lambda e: self.frames_value.config(cursor="hand2"))
                 self.frames_value.tag_bind(tag_name, "<Leave>", lambda e: self.frames_value.config(cursor=""))
-                self.frames_value.tag_bind(tag_name, "<Button-1>", lambda e, f=frame_num: self.show_frame(f))
+                self.frames_value.tag_bind(tag_name, "<Button-1>", lambda e, t=timestamp: self.show_timestamp(t))
 
-                if i < len(frames) - 1:
+                if i < len(timestamps) - 1:
                     self.frames_value.insert("insert", "\n", "center")
 
         self.frames_value.config(state="disabled")
@@ -404,13 +387,12 @@ class FallDetection:
         # update metrics bar
         self.update_metrics(metrics)
 
-        print(f"\n[Analysis {self.fall_counter}] -> Class: {cls}, Frames: {frames}")
+        print(f"\n[Analysis {self.fall_counter}] -> Class: {cls}, Timestamps: {timestamps}")
 
     def update_metrics(self, metrics):
         accuracy = metrics.get("accuracy", None)
         precision = metrics.get("precision", None)
         recall = metrics.get("recall", None)
-        f1_score = metrics.get("f1_score", None)
 
         # accuracy
         if accuracy is not None:
@@ -439,42 +421,28 @@ class FallDetection:
         else:
             self.recall_label.config(text="Recall: --", fg="#888888")
 
-        # F1 score
-        if f1_score is not None:
-            self.f1_label.config(
-                text=f"F1-Score: {f1_score:.1f}%",
-                fg="#99e695" if f1_score >= 90 else "#e8e8e8"
-            )
-        else:
-            self.f1_label.config(text="F1-Score: --", fg="#888888")
-
-    def show_frame(self, frame_number):
+    def show_timestamp(self, timestamp):
         if not self.current_file_path:
-            print("No video loaded.")
+            print("ERROR: No video loaded.")
             return
 
-        print(f"Playing sequence around frame {frame_number} from video: {self.current_file_path}")
-
-        # Stop any existing playback
         if hasattr(self, 'playback_job') and self.playback_job:
             self.root.after_cancel(self.playback_job)
             self.playback_job = None
 
-        # Calculate start and end frames
-        start_frame = max(0, frame_number - 20)
-        end_frame = frame_number + 20
-
-        # Open video and get total frame count
+        # convert timestamp to frame
+        center_frame = self.timestamp_to_frame(timestamp)
+        frames_range = int(0.67 * self.video_fps)
+        start_frame = max(0, center_frame - frames_range)
+        
         cap = cv2.VideoCapture(self.current_file_path)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         cap.release()
 
-        # Ensure end_frame doesn't exceed video length
-        end_frame = min(end_frame, total_frames - 1)
+        end_frame = min(center_frame + frames_range, total_frames - 1)
 
-        print(f"Playing frames {start_frame} to {end_frame} (Total: {end_frame - start_frame + 1} frames)")
+        print(f"Playing frames {start_frame} to {end_frame} (around {self.format_timestamp(timestamp)})")
 
-        # Start sequential playback
         self.play_frame_sequence(start_frame, end_frame, start_frame)
 
     def play_frame_sequence(self, current_frame, end_frame, start_frame):
@@ -546,7 +514,6 @@ class FallDetection:
             self.root.after_cancel(self.flash_job)
             self.flash_job = None
 
-        # Stop any ongoing playback
         if self.playback_job:
             self.root.after_cancel(self.playback_job)
             self.playback_job = None
@@ -555,7 +522,6 @@ class FallDetection:
         self.filename_label.config(text="")
         self.detected_label.config(text="", fg="#fe3330")
 
-        # Clear all subsections
         self.class_value.config(text="")
         self.desc_value.config(text="")
         self.frames_value.config(state="normal")
@@ -563,7 +529,6 @@ class FallDetection:
         self.frames_value.insert("1.0", "", "center")
         self.frames_value.config(state="disabled")
 
-        # Reset metrics
         self.update_metrics({})
 
         for w in [self.thumbnail_frame, self.btn_frame, self.result_frame, self.file_label_frame]:
