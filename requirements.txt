@@ -48,3 +48,6 @@ typing-inspection==0.4.2
 typing_extensions==4.15.0
 urllib3==2.5.0
 wcwidth==0.2.14
+transformers==4.43.0
+accelerate==0.30.0
+safetensors==0.4.5
