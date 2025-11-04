@@ -1,17 +1,48 @@
 import tkinter as tk
 from tkinter import filedialog
 from PIL import Image, ImageTk
-import cv2
-import os
-import model_runtime
+import cv2, re, json, os
+from model_utils import load, prep_message, analyze_video
+from huggingface_hub import snapshot_download
+
+
+SYSTEM_PROMPT = (
+"Analyze each input video and determine whether a fall event occurred.\n\n"
+"Output Format\n"
+"Always respond only in valid JSON following this schema exactly:\n\n"
+"{\n"
+' "class": "FALL" | "NO_FALL",\n'
+' "confidence": <float between 0.0 and 1.0>,\n'
+' "reasoning": <short explanation of why this classification was chosen, up to 600 characters>\n'
+' "fall_start": <time in seconds when the fall began, 0 if NO_FALL>\n'
+' "fall_end": <time in seconds at moment of impact, 0 if NO_FALL>\n'
+"}\n\n"
+"Guidelines\n"
+"- Falls are scenes where the person experiences rapid and uncontrolled descent resulting in impact.\n"
+"- Classify crouching motions, controlled descents, and falling on a bed as NO_FALL.\n"
+"- If the classification is NO_FALL, then fall_start and fall_end should be 0.\n"
+'- The "confidence" should reflect certainty about the classification.\n'
+'- The "reasoning" must summarise key visual cues (e.g., "rapid descent followed by lying posture").\n'
+"- Do not include any text outside the JSON.\n"
+"- When uncertain or visibility is poor, lower the confidence but still choose the best label.\n"
+)
 
 class FallDetection:
+
     def __init__(self):
+        
+        model_name = "Qwen/Qwen2.5-VL-7B-Instruct"
+        path = "./qwen2.5vl_snapshot"
+
         self.root = tk.Tk()
         self.root.geometry("900x880")
         self.root.title("Fall Detection")
         self.root.config(bg="#1f1f1f")
-        self.ctx = model_runtime.init_model()   # one-time model load
+
+        if not os.path.isdir(path):
+            snapshot_download(model_name, local_dir=path)
+        
+        self.model, self.processor = load()
 
         self.current_file_path = None
         self.flash_job = None
@@ -329,7 +360,10 @@ class FallDetection:
 
         # TEST DATA
         try:
-            result = model_runtime.analyse_video(video_path, self.ctx)
+
+            message = prep_message(video_path, SYSTEM_PROMPT)
+            result = analyze_video(self.model, self.processor, message)
+            
         except Exception as e:
             print(f"[ERROR] analysis failed: {e}")
             # graceful fallback to a neutral result so GUI never crashes
@@ -340,6 +374,12 @@ class FallDetection:
                 "metrics": {}
             }
 
+        result = json.loads(re.sub(r'^```json\n|```$', '', result))
+
+        result["fall_timestamps"] = [result["fall_start"], result["fall_end"]]
+
+        print(result)
+
         self.display_analysis_result(result)
         self.last_analysis_path = video_path
         return video_path
@@ -347,7 +387,7 @@ class FallDetection:
     def display_analysis_result(self, result_dict):
 
         cls = result_dict.get("class", "UNKNOWN")
-        desc = result_dict.get("desc", "")
+        desc = result_dict.get("reasoning", "")
         timestamps = result_dict.get("fall_timestamps", [])
         metrics = result_dict.get("metrics", {})
 
