@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import filedialog
 from PIL import Image, ImageTk
-import cv2, re, json, os, threading
+import cv2, re, json, os, threading, itertools
 from model_utils import load, prep_message, analyze_video
 from huggingface_hub import snapshot_download
 
@@ -29,7 +29,6 @@ SYSTEM_PROMPT = (
 
 
 class FallDetection:
-
     def __init__(self):
         model_name = "Qwen/Qwen2.5-VL-7B-Instruct"
         path = "./qwen2.5vl_snapshot"
@@ -45,9 +44,8 @@ class FallDetection:
         self.model, self.processor = load()
 
         self.current_file_path = None
-        self.flash_job = None
-        self.fall_counter = 0
-        self.playback_job = None
+        self.spinner_running = False
+        self.spinner_job = None
         self.video_fps = 30
 
         self.setup_navbar()
@@ -67,32 +65,19 @@ class FallDetection:
 
         title_frame = tk.Frame(navbar, bg="#000000")
         title_frame.pack(side="left", padx=20)
-
         tk.Label(title_frame, text="fall", font=("Arial Bold", 25),
                  bg="#000000", fg="#fe3330").pack(side="left")
         tk.Label(title_frame, text="Detection", font=("Arial Bold", 24),
                  bg="#000000", fg="#ffffff").pack(side="left")
 
-        right_frame = tk.Frame(navbar, bg="#000000")
-        right_frame.pack(side="right", padx=(20, 0))
-
         directory_path = os.path.dirname(__file__)
-        logo_path = os.path.join(directory_path, 'img/segfault_logo.png')
         refresh_path = os.path.join(directory_path, 'img/refresh.png')
-
-        logo_img = Image.open(logo_path).resize((130, 75), Image.Resampling.LANCZOS)
-        self.logo_tk = ImageTk.PhotoImage(logo_img)
-        tk.Label(right_frame, image=self.logo_tk, bg="#000000").pack(side="right", padx=(10, 0))
-
-        refresh_img = Image.open(refresh_path).resize((20, 20), Image.Resampling.LANCZOS)
-        self.refresh_tk = ImageTk.PhotoImage(refresh_img)
-
-        self.refresh_btn = tk.Button(
-            right_frame, image=self.refresh_tk,
-            bg="#000000", bd=0, activebackground="#1a1a1a",
-            cursor="hand2", command=self.refresh
-        )
-        self.refresh_btn.pack(side="right", padx=(0, 10))
+        if os.path.exists(refresh_path):
+            refresh_img = Image.open(refresh_path).resize((20, 20), Image.Resampling.LANCZOS)
+            self.refresh_tk = ImageTk.PhotoImage(refresh_img)
+            tk.Button(navbar, image=self.refresh_tk, bg="#000000", bd=0,
+                      activebackground="#1a1a1a", cursor="hand2", command=self.refresh
+                      ).pack(side="right", padx=(0, 15))
 
     def setup_preview_area(self):
         self.detected_label = tk.Label(self.root, text="", font=("fixedsys", 22),
@@ -117,19 +102,12 @@ class FallDetection:
     def setup_welcome_section(self):
         self.welcome_frame = tk.Frame(self.root, bg="#1f1f1f")
         self.welcome_frame.pack(pady=(5, 15))
-
         tk.Label(self.welcome_frame, text="Upload a Video", font=("Arial bold", 26),
                  bg="#1f1f1f", fg="#cccaca").pack()
-        tk.Label(self.welcome_frame,
-                 text="\nPlease select your desired video to analyse for the system\nto detect and identify a fall that occurs.",
-                 font=("Helvetica", 10), bg="#1f1f1f", fg="#e8e8e8").pack()
-
         self.upload_btn = tk.Button(
             self.root, text="Upload", font=("Courier New Bold", 14),
-            bg="#fe3330", fg="#ffffff",
-            activebackground="#b32028", activeforeground="#ffffff",
-            bd=0, padx=15, pady=5, cursor="hand2",
-            command=self.open_file_locator
+            bg="#fe3330", fg="#ffffff", activebackground="#b32028",
+            bd=0, padx=15, pady=5, cursor="hand2", command=self.open_file_locator
         )
         self.upload_btn.pack(padx=10, pady=(30, 0))
 
@@ -146,19 +124,14 @@ class FallDetection:
         self.btn_frame = tk.Frame(self.root, bg="#1f1f1f")
         self.analyse_btn = tk.Button(
             self.btn_frame, text="Analyse", font=("Courier New Bold", 12),
-            bg="#fe3330", fg="white",
-            activebackground="#b32028", activeforeground="white",
-            bd=0, padx=15, pady=5, cursor="hand2",
-            command=self.analyse_video
+            bg="#fe3330", fg="white", activebackground="#b32028",
+            bd=0, padx=15, pady=5, cursor="hand2", command=self.analyse_video
         )
         self.analyse_btn.pack(side="left", padx=15)
-
         self.change_video_btn = tk.Button(
             self.btn_frame, text="Change Video", font=("Courier New", 12),
-            bg="#333333", fg="#b8b8b8",
-            activebackground="#555555", activeforeground="#b8b8b8",
-            bd=0, padx=15, pady=5, cursor="hand2",
-            command=self.open_file_locator
+            bg="#333333", fg="#b8b8b8", activebackground="#555555",
+            bd=0, padx=15, pady=5, cursor="hand2", command=self.open_file_locator
         )
         self.change_video_btn.pack(side="left")
 
@@ -167,17 +140,16 @@ class FallDetection:
         subsections_container = tk.Frame(self.result_frame, bg="#1f1f1f")
         subsections_container.pack(fill="both", expand=True, padx=5, pady=(5, 0))
 
-        # CLASSIFICATION
+        # Classification
         class_frame = tk.Frame(subsections_container, bg="#141414", relief="solid", bd=1, width=150)
         class_frame.pack(side="left", fill="both", padx=(0, 5))
-        class_frame.pack_propagate(False)
         tk.Label(class_frame, text="CLASSIFICATION", font=("Arial Bold", 10),
                  bg="#252525", fg="#ffffff").pack(fill="x")
         self.class_value = tk.Label(class_frame, text="", font=("Arial Bold", 16),
                                     bg="#141414", fg="#ffffff")
         self.class_value.pack(fill="both", expand=True)
 
-        # DESCRIPTION
+        # Description
         desc_frame = tk.Frame(subsections_container, bg="#141414", relief="solid", bd=1)
         desc_frame.pack(side="left", fill="both", expand=True, padx=(0, 5))
         tk.Label(desc_frame, text="DESCRIPTION", font=("Arial Bold", 10),
@@ -186,150 +158,29 @@ class FallDetection:
                                    bg="#141414", fg="#fcfcfc", wraplength=400)
         self.desc_value.pack(fill="both", expand=True)
 
-        # FALL TIMESTAMPS
+        # Fall timestamps
         frames_frame = tk.Frame(subsections_container, bg="#141414", relief="solid", bd=1, width=150)
         frames_frame.pack(side="left", fill="both")
-        frames_frame.pack_propagate(False)
         tk.Label(frames_frame, text="FALL TIMESTAMPS", font=("Arial Bold", 10),
                  bg="#252525", fg="#ffffff").pack(fill="x")
-        self.frames_container = tk.Frame(frames_frame, bg="#141414")
-        self.frames_container.pack(expand=True)
-        self.frames_value = tk.Text(self.frames_container, font=("Courier New", 11),
-                                    bg="#141414", fg="#fcfcfc", wrap="none", relief="flat",
-                                    padx=10, pady=25, highlightthickness=0, takefocus=0)
+        self.frames_value = tk.Text(frames_frame, font=("Courier New", 11),
+                                    bg="#141414", fg="#fcfcfc", wrap="none",
+                                    relief="flat", padx=10, pady=25)
         self.frames_value.pack(expand=True)
-        self.frames_value.tag_configure("center", justify="center")
         self.frames_value.config(state="disabled")
 
-        self.setup_metrics_bar()
-
-    def setup_metrics_bar(self):
-        self.metrics_frame = tk.Frame(self.result_frame, bg="#1f1f1f", height=35)
-        self.metrics_frame.pack(side="bottom", fill="x", padx=5, pady=(5, 5))
-        metrics_container = tk.Frame(self.metrics_frame, bg="#1f1f1f")
-        metrics_container.pack(expand=True)
-        self.accuracy_label = tk.Label(metrics_container, text="Accuracy: --",
-                                       font=("Courier New", 9), bg="#1f1f1f", fg="#888888")
-        self.accuracy_label.pack(side="left", padx=10)
-        tk.Label(metrics_container, text="|", font=("Courier New", 9),
-                 bg="#1f1f1f", fg="#444444").pack(side="left", padx=5)
-        self.precision_label = tk.Label(metrics_container, text="Precision: --",
-                                        font=("Courier New", 9), bg="#1f1f1f", fg="#888888")
-        self.precision_label.pack(side="left", padx=10)
-        tk.Label(metrics_container, text="|", font=("Courier New", 9),
-                 bg="#1f1f1f", fg="#444444").pack(side="left", padx=5)
-        self.recall_label = tk.Label(metrics_container, text="Recall: --",
-                                     font=("Courier New", 9), bg="#1f1f1f", fg="#888888")
-        self.recall_label.pack(side="left", padx=10)
-
-    # ------------------------ FILE HANDLING ------------------------ #
+    # ------------------------ FILE + ANALYSIS ------------------------ #
     def open_file_locator(self):
         file_path = filedialog.askopenfilename(
             title="Select a video file",
             filetypes=(("Video files", "*.mp4 *.avi *.mov"), ("All files", "*.*"))
         )
         if file_path:
-            self.handle_file(file_path)
+            self.current_file_path = file_path
+            self.filename_label.config(text=os.path.basename(file_path))
+            self.show_thumbnail(file_path)
+            self.show_analyse_btn()
 
-    def handle_file(self, file_path):
-        self.current_file_path = file_path
-        cap = cv2.VideoCapture(file_path)
-        self.video_fps = cap.get(cv2.CAP_PROP_FPS)
-        cap.release()
-        self.show_analyse_btn()
-        self.show_thumbnail(file_path)
-        self.filename_label.config(text=os.path.basename(file_path))
-
-    def show_analyse_btn(self):
-        for f in [self.welcome_frame, self.upload_btn, self.preview_frame]:
-            if hasattr(f, "pack_forget"):
-                try:
-                    f.pack_forget()
-                except Exception:
-                    pass
-        if not self.thumbnail_frame.winfo_ismapped():
-            self.thumbnail_frame.pack(pady=5)
-        if not self.file_label_frame.winfo_ismapped():
-            self.file_label_frame.pack()
-        if not self.btn_frame.winfo_ismapped():
-            self.btn_frame.pack(padx=10, pady=(50, 5))
-        if not self.result_frame.winfo_ismapped():
-            self.result_frame.pack(side="bottom", padx=10, pady=10, fill="both", expand=True)
-
-    # ------------------------ ANALYSIS ------------------------ #
-    def analyse_video(self):
-        if not self.current_file_path:
-            self.class_value.config(text="No video selected")
-            self.desc_value.config(text="Please upload or choose a video first.")
-            return
-
-        video_path = self.current_file_path
-        print(f"Analyse called for: {video_path}")
-
-        # Option 1 – immediate feedback
-        self.class_value.config(text="Processing...")
-        self.desc_value.config(text="Analysing video on GPU, please wait...")
-        self.root.update_idletasks()
-
-        # Option 2 – run heavy work in a background thread
-        thread = threading.Thread(target=self.run_analysis_in_thread, args=(video_path,))
-        thread.start()
-
-    def run_analysis_in_thread(self, video_path):
-        try:
-            message = prep_message(video_path, SYSTEM_PROMPT)
-            result = analyze_video(self.model, self.processor, message)
-            result = json.loads(re.sub(r'^```json\n|```$', '', result))
-            result["fall_timestamps"] = [result["fall_start"], result["fall_end"]]
-        except Exception as e:
-            print(f"[ERROR] analysis failed: {e}")
-            result = {
-                "class": "UNKNOWN",
-                "reasoning": "Analysis failed. See console logs.",
-                "fall_timestamps": [],
-                "metrics": {}
-            }
-
-        # update GUI safely
-        self.root.after(0, lambda: self.display_analysis_result(result))
-
-    # ------------------------ DISPLAY ------------------------ #
-    def display_analysis_result(self, result_dict):
-        cls = result_dict.get("class", "UNKNOWN")
-        desc = result_dict.get("reasoning", "")
-        timestamps = result_dict.get("fall_timestamps", [])
-        metrics = result_dict.get("metrics", {})
-
-        if cls == "FALL":
-            self.detected_label.config(text=f"FALL DETECTED!")
-        else:
-            self.detected_label.config(text="NO FALL DETECTED")
-
-        self.class_value.config(text=cls)
-        self.desc_value.config(text=desc)
-        self.frames_value.config(state="normal")
-        self.frames_value.delete("1.0", "end")
-
-        for i, timestamp in enumerate(timestamps):
-            self.frames_value.insert("insert", f"{timestamp:.2f}s\n", "center")
-        self.frames_value.config(state="disabled")
-
-        self.update_metrics(metrics)
-        print(f"\n[Result] Class: {cls}, timestamps: {timestamps}")
-
-    def update_metrics(self, metrics):
-        acc, pre, rec = (metrics.get("accuracy"), metrics.get("precision"), metrics.get("recall"))
-        self.accuracy_label.config(
-            text=f"Accuracy: {acc:.1f}%" if acc else "Accuracy: --",
-            fg="#99e695" if acc and acc >= 90 else "#888888")
-        self.precision_label.config(
-            text=f"Precision: {pre:.1f}%" if pre else "Precision: --",
-            fg="#99e695" if pre and pre >= 90 else "#888888")
-        self.recall_label.config(
-            text=f"Recall: {rec:.1f}%" if rec else "Recall: --",
-            fg="#99e695" if rec and rec >= 90 else "#888888")
-
-    # ------------------------ MISC ------------------------ #
     def show_thumbnail(self, video_path):
         cap = cv2.VideoCapture(video_path)
         ret, frame = cap.read()
@@ -341,27 +192,91 @@ class FallDetection:
             self.thumbnail_label.configure(image=imgtk)
             self.thumbnail_label.image = imgtk
             self.thumbnail_label.pack(padx=10, pady=10)
+            self.thumbnail_frame.pack(pady=10)
+
+    def show_analyse_btn(self):
+        for w in [self.preview_frame, self.welcome_frame, self.upload_btn]:
+            try:
+                w.pack_forget()
+            except Exception:
+                pass
+        if not self.file_label_frame.winfo_ismapped():
+            self.file_label_frame.pack()
+        if not self.btn_frame.winfo_ismapped():
+            self.btn_frame.pack(pady=(20, 5))
+        if not self.result_frame.winfo_ismapped():
+            self.result_frame.pack(side="bottom", padx=10, pady=10, fill="both", expand=True)
+
+    def analyse_video(self):
+        if not self.current_file_path:
+            return
+        self.class_value.config(text="Processing...")
+        self.desc_value.config(text="Analysing video on GPU, please wait...")
+        self.root.update_idletasks()
+        self.start_spinner()
+        thread = threading.Thread(target=self.run_analysis_in_thread, args=(self.current_file_path,))
+        thread.start()
+
+    # ------------------------ SPINNER ------------------------ #
+    def start_spinner(self):
+        self.spinner_running = True
+        spinner_chars = itertools.cycle(["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
+
+        def animate():
+            if not self.spinner_running:
+                return
+            self.class_value.config(text=f"Processing {next(spinner_chars)}")
+            self.spinner_job = self.root.after(150, animate)
+        animate()
+
+    def stop_spinner(self):
+        self.spinner_running = False
+        if self.spinner_job:
+            self.root.after_cancel(self.spinner_job)
+            self.spinner_job = None
+
+    # ------------------------ ANALYSIS THREAD ------------------------ #
+    def run_analysis_in_thread(self, video_path):
+        try:
+            message = prep_message(video_path, SYSTEM_PROMPT)
+            result = analyze_video(self.model, self.processor, message)
+            result = json.loads(re.sub(r'^```json\n|```$', '', result))
+            result["fall_timestamps"] = [result["fall_start"], result["fall_end"]]
+        except Exception as e:
+            print(f"[ERROR] analysis failed: {e}")
+            result = {"class": "UNKNOWN", "reasoning": "Analysis failed.", "fall_timestamps": []}
+        self.root.after(0, lambda: self.display_analysis_result(result))
+
+    def display_analysis_result(self, result):
+        self.stop_spinner()
+        cls = result.get("class", "UNKNOWN")
+        desc = result.get("reasoning", "")
+        timestamps = result.get("fall_timestamps", [])
+        self.class_value.config(text=cls)
+        self.desc_value.config(text=desc)
+        self.frames_value.config(state="normal")
+        self.frames_value.delete("1.0", "end")
+        for t in timestamps:
+            self.frames_value.insert("end", f"{t:.2f}s\n")
+        self.frames_value.config(state="disabled")
+        self.detected_label.config(text="FALL DETECTED!" if cls == "FALL" else "NO FALL DETECTED")
 
     def refresh(self):
+        self.stop_spinner()
         self.current_file_path = None
         self.filename_label.config(text="")
-        self.detected_label.config(text="", fg="#fe3330")
+        self.detected_label.config(text="")
         self.class_value.config(text="")
         self.desc_value.config(text="")
         self.frames_value.config(state="normal")
         self.frames_value.delete("1.0", "end")
         self.frames_value.config(state="disabled")
-        self.update_metrics({})
-
         for w in [self.thumbnail_frame, self.btn_frame, self.result_frame, self.file_label_frame]:
             if w.winfo_ismapped():
                 w.pack_forget()
-        if not self.preview_frame.winfo_ismapped():
-            self.preview_frame.pack(pady=10)
-        if not self.welcome_frame.winfo_ismapped():
-            self.welcome_frame.pack(pady=(5, 15))
-        if not self.upload_btn.winfo_ismapped():
-            self.upload_btn.pack(padx=15, pady=5)
+        self.preview_frame.pack(pady=10)
+        self.welcome_frame.pack(pady=(5, 15))
+        self.upload_btn.pack(padx=15, pady=5)
 
 
 if __name__ == "__main__":
