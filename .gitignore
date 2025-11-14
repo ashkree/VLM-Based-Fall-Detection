@@ -1,6 +1,8 @@
 
 FDVLM-env/
-backend/ollama_client/test_files/
+.vscode
+.models
+.env
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

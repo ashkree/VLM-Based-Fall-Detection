@@ -1,12 +1,20 @@
-import os
-import json
-import re
+"""
+    This file contains the different models that can be used in the app
+"""
+
+import os, json, re, yaml
 from abc import ABC, abstractmethod
 
-
-# Base class for all detectors
+# ==================== BASE CLASS ===================
 class BaseFallDetector(ABC):
+
+    with open("config.yaml", "r") as file:
+        config = yaml.safe_load(file)
+
+
     def __init__(self, name):
+
+
         self.name = name
 
     @abstractmethod
@@ -26,15 +34,111 @@ class BaseFallDetector(ABC):
                 result[key] = 0 if 'fall' in key else ''
 
         return result
+    
+    def _parse_json(self, str):
 
+        return json.loads(re.sub(r'^```json\n|```$', '', str.strip()))
+
+# ==================== QWEN2.5-7B-VL ===================
+class QWEN_2_5_VisionDetector(BaseFallDetector):
+
+    def __init__(self):
+
+        super().__init__("Qwen 2.5 VL")
+
+        from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
+        from huggingface_hub import snapshot_download
+        
+        config = self.config["qwen2.5"]
+
+        download_local = config["download_local"]
+        local_folder =  config["local_folder"]
+        model_type =  config["model"]
+
+        self.max_new_tokens = config["max_new_tokens"]
+        self.temperature = config["temperature"]
+
+        if download_local:
+            if not os.path.isdir(local_folder):
+                snapshot_download(model_name, local_dir=local_folder)
+            model_name = local_folder
+        else:
+            model_name = model_type
+
+        self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+            model_name,
+            dtype="float16",
+            device_map="auto",
+            local_files_only=download_local
+        )
+
+        self.processor = AutoProcessor.from_pretrained(
+            model_name, 
+            local_files_only=download_local)
+
+    def analyze_video(self, video_path, system_prompt, **kwargs):
+
+        import torch
+        from qwen_vl_utils import process_vision_info
+
+        messages = [            
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "video", "video": video_path},
+                    {"type": "text", "text": "Analyse this video and return only JSON."},
+                ],
+            },
+        ]
+
+        text = self.processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+
+        image_inputs, video_inputs = process_vision_info(messages)
+
+        inputs = self.processor(
+            text=[text],
+            images=image_inputs,
+            videos=video_inputs,
+            padding=True,
+            return_tensors="pt",
+        )
+
+        if torch.cuda.is_available():
+            inputs = {k: v.to("cuda") for k, v in inputs.items()}
+
+        with torch.inference_mode():
+            generated_ids = self.model.generate(
+                **inputs,
+                max_new_tokens=self.max_new_tokens,
+                do_sample=self.temperature > 0.0,
+            )
+
+        generated_ids_trimmed = [
+            out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs["input_ids"], generated_ids)
+        ]
+
+        output_texts = self.processor.batch_decode(
+            generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+        )
+
+        return self._parse_json(output_texts[0])
 
 # ==================== GPT-4 VISION ====================
 class GPT4VisionDetector(BaseFallDetector):
+
     def __init__(self, api_key=None):
-        super().__init__("GPT-4 Vision")
+
         from openai import OpenAI
+
+        super().__init__(self.config["gpt"]["name"])
+    
+        self.model = self.config["gpt"]["model"]
+
         self.client = OpenAI(api_key=api_key or os.getenv('OPENAI_API_KEY'))
-        self.model = "gpt-4o"
+
 
     def analyze_video(self, video_path, system_prompt, num_frames=8, **kwargs):
         """Analyze video by extracting frames."""
@@ -68,6 +172,7 @@ class GPT4VisionDetector(BaseFallDetector):
                     "type": "text",
                     "text": f"\n--- Frame {i + 1}/{num_frames} (Time: {timestamp:.2f}s) ---"
                 })
+
                 content.append({
                     "type": "image_url",
                     "image_url": {
@@ -92,8 +197,7 @@ class GPT4VisionDetector(BaseFallDetector):
             )
 
             result_text = response.choices[0].message.content
-            result_text = re.sub(r'^```json\n|```$', '', result_text.strip())
-            result = json.loads(result_text)
+            result = self._parse_json(result_text)
 
             # Calculate cost
             image_cost = num_frames * 0.0085
@@ -123,13 +227,21 @@ class GPT4VisionDetector(BaseFallDetector):
 
 # ==================== GOOGLE GEMINI ====================
 class GeminiDetector(BaseFallDetector):
-    def __init__(self, api_key=None):
-        super().__init__("Gemini 1.5 Flash")
+
+    def __init__(self):
+
         import google.generativeai as genai
-        genai.configure(api_key=api_key or os.getenv('GOOGLE_API_KEY'))
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
+
+        super().__init__(self.config["google"]["name"])
+    
+        self.model = genai.GenerativeModel(self.config["google"]["model"])
+        
+        genai.configure(os.getenv('GOOGLE_API_KEY'))
+
+        
 
     def analyze_video(self, video_path, system_prompt, **kwargs):
+
         """Analyze video using Gemini (supports native video!)."""
         import google.generativeai as genai
 
@@ -158,8 +270,7 @@ class GeminiDetector(BaseFallDetector):
             )
 
             result_text = response.text
-            result_text = re.sub(r'^```json\n|```$', '', result_text.strip())
-            result = json.loads(result_text)
+            result = self._parse_json(result_text)
 
             # Gemini pricing (approximate)
             result['api_used'] = self.name
@@ -186,11 +297,16 @@ class GeminiDetector(BaseFallDetector):
 
 # ==================== CLAUDE (Anthropic) ====================
 class ClaudeDetector(BaseFallDetector):
-    def __init__(self, api_key=None):
-        super().__init__("Claude 3.5 Sonnet")
+
+    def __init__(self):
+
         from anthropic import Anthropic
-        self.client = Anthropic(api_key=api_key or os.getenv('ANTHROPIC_API_KEY'))
-        self.model = "claude-3-5-sonnet-20241022"
+
+        super().__init__(self.config["anthropic"]["name"])
+    
+        self.model = self.config["anthropic"]["model"]
+
+        self.client = Anthropic(os.getenv('ANTHROPIC_API_KEY'))
 
     def analyze_video(self, video_path, system_prompt, num_frames=8, **kwargs):
         """Analyze video by extracting frames (Claude doesn't support video)."""
@@ -244,8 +360,7 @@ class ClaudeDetector(BaseFallDetector):
             )
 
             result_text = response.content[0].text
-            result_text = re.sub(r'^```json\n|```$', '', result_text.strip())
-            result = json.loads(result_text)
+            result = self._parse_json(result_text)
 
             # Claude pricing
             image_cost = num_frames * 0.0048  # $4.80 per 1000 images
@@ -280,6 +395,7 @@ def get_detector(detector_type, **kwargs):
         "GPT-4 Vision": GPT4VisionDetector,
         "Gemini 1.5 Flash": GeminiDetector,
         "Claude 3.5 Sonnet": ClaudeDetector,
+        "Qwen 2.5 VL": QWEN_2_5_VisionDetector
     }
 
     if detector_type not in detectors:
