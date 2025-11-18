@@ -2,18 +2,21 @@
     This file contains the different models that can be used in the app
 """
 
-import os, json, re, yaml
+import os
+import json
+import re
+import yaml
 from abc import ABC, abstractmethod
 
 # ==================== BASE CLASS ===================
+
+
 class BaseFallDetector(ABC):
 
     with open("config.yaml", "r") as file:
         config = yaml.safe_load(file)
 
-
     def __init__(self, name):
-
 
         self.name = name
 
@@ -28,18 +31,21 @@ class BaseFallDetector(ABC):
         if 'classification' in result and 'class' not in result:
             result['class'] = result.pop('classification')
 
-        required_keys = ['class', 'confidence', 'reasoning', 'fall_start', 'fall_end']
+        required_keys = ['class', 'confidence',
+                         'reasoning', 'fall_start', 'fall_end']
         for key in required_keys:
             if key not in result:
                 result[key] = 0 if 'fall' in key else ''
 
         return result
-    
+
     def _parse_json(self, str):
 
         return json.loads(re.sub(r'^```json\n|```$', '', str.strip()))
 
 # ==================== QWEN2.5-7B-VL ===================
+
+
 class QWEN_2_5_VisionDetector(BaseFallDetector):
 
     def __init__(self):
@@ -48,19 +54,19 @@ class QWEN_2_5_VisionDetector(BaseFallDetector):
 
         from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
         from huggingface_hub import snapshot_download
-        
+
         config = self.config["qwen2.5"]
 
         download_local = config["download_local"]
-        local_folder =  config["local_folder"]
-        model_type =  config["model"]
+        local_folder = config["local_folder"]
+        model_type = config["model"]
 
         self.max_new_tokens = config["max_new_tokens"]
         self.temperature = config["temperature"]
 
         if download_local:
             if not os.path.isdir(local_folder):
-                snapshot_download(model_name, local_dir=local_folder)
+                snapshot_download(model_type, local_dir=local_folder)
             model_name = local_folder
         else:
             model_name = model_type
@@ -73,7 +79,7 @@ class QWEN_2_5_VisionDetector(BaseFallDetector):
         )
 
         self.processor = AutoProcessor.from_pretrained(
-            model_name, 
+            model_name,
             local_files_only=download_local)
 
     def analyze_video(self, video_path, system_prompt, **kwargs):
@@ -81,7 +87,7 @@ class QWEN_2_5_VisionDetector(BaseFallDetector):
         import torch
         from qwen_vl_utils import process_vision_info
 
-        messages = [            
+        messages = [
             {"role": "system", "content": system_prompt},
             {
                 "role": "user",
@@ -127,6 +133,8 @@ class QWEN_2_5_VisionDetector(BaseFallDetector):
         return self._parse_json(output_texts[0])
 
 # ==================== GPT-4 VISION ====================
+
+
 class GPT4VisionDetector(BaseFallDetector):
 
     def __init__(self, api_key=None):
@@ -134,11 +142,10 @@ class GPT4VisionDetector(BaseFallDetector):
         from openai import OpenAI
 
         super().__init__(self.config["gpt"]["name"])
-    
+
         self.model = self.config["gpt"]["model"]
 
         self.client = OpenAI(api_key=api_key or os.getenv('OPENAI_API_KEY'))
-
 
     def analyze_video(self, video_path, system_prompt, num_frames=8, **kwargs):
         """Analyze video by extracting frames."""
@@ -150,7 +157,8 @@ class GPT4VisionDetector(BaseFallDetector):
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         fps = cap.get(cv2.CAP_PROP_FPS)
 
-        frame_indices = [int(i * total_frames / num_frames) for i in range(num_frames)]
+        frame_indices = [int(i * total_frames / num_frames)
+                         for i in range(num_frames)]
 
         content = [{"type": "text", "text": system_prompt}]
 
@@ -162,9 +170,11 @@ class GPT4VisionDetector(BaseFallDetector):
                 height, width = frame.shape[:2]
                 if max(height, width) > 1024:
                     scale = 1024 / max(height, width)
-                    frame = cv2.resize(frame, (int(width * scale), int(height * scale)))
+                    frame = cv2.resize(
+                        frame, (int(width * scale), int(height * scale)))
 
-                _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                _, buffer = cv2.imencode(
+                    '.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
                 frame_b64 = base64.b64encode(buffer).decode('utf-8')
                 timestamp = idx / fps if fps > 0 else 0
 
@@ -233,15 +243,12 @@ class GeminiDetector(BaseFallDetector):
         import google.generativeai as genai
 
         super().__init__(self.config["google"]["name"])
-    
+
         self.model = genai.GenerativeModel(self.config["google"]["model"])
-        
+
         genai.configure(os.getenv('GOOGLE_API_KEY'))
 
-        
-
     def analyze_video(self, video_path, system_prompt, **kwargs):
-
         """Analyze video using Gemini (supports native video!)."""
         import google.generativeai as genai
 
@@ -303,7 +310,7 @@ class ClaudeDetector(BaseFallDetector):
         from anthropic import Anthropic
 
         super().__init__(self.config["anthropic"]["name"])
-    
+
         self.model = self.config["anthropic"]["model"]
 
         self.client = Anthropic(os.getenv('ANTHROPIC_API_KEY'))
@@ -318,7 +325,8 @@ class ClaudeDetector(BaseFallDetector):
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         fps = cap.get(cv2.CAP_PROP_FPS)
 
-        frame_indices = [int(i * total_frames / num_frames) for i in range(num_frames)]
+        frame_indices = [int(i * total_frames / num_frames)
+                         for i in range(num_frames)]
 
         content = [{"type": "text", "text": system_prompt}]
 
@@ -330,9 +338,11 @@ class ClaudeDetector(BaseFallDetector):
                 height, width = frame.shape[:2]
                 if max(height, width) > 1568:  # Claude's max
                     scale = 1568 / max(height, width)
-                    frame = cv2.resize(frame, (int(width * scale), int(height * scale)))
+                    frame = cv2.resize(
+                        frame, (int(width * scale), int(height * scale)))
 
-                _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                _, buffer = cv2.imencode(
+                    '.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
                 frame_b64 = base64.b64encode(buffer).decode('utf-8')
                 timestamp = idx / fps if fps > 0 else 0
 
