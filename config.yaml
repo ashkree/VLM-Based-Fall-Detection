@@ -19,4 +19,4 @@ google:
 # anthropic model config
 anthropic:
   name: "Claude 3.5 Sonnet"
-  model: "claude-3-5-sonnet-20241022"
+  model: "claude-sonnet-4-5"
